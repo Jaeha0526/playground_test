@@ -51,13 +51,17 @@ python main.py train Go1JoystickFlatTerrain --config config.json
 
 ### Evaluate a Policy
 ```bash
-# Evaluate with forward motion
+# Basic evaluation with video
 python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
     --x-vel 1.0 --y-vel 0.0 --yaw-vel 0.0 --episodes 10
 
-# Evaluate with turning
+# Evaluate with interactive video display (like notebook)
 python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
-    --x-vel 0.0 --y-vel 0.0 --yaw-vel 3.14 --episodes 5
+    --x-vel 1.0 --show-video --camera track --width 1280 --height 720
+
+# Evaluate with custom camera and video settings
+python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
+    --camera side --width 1920 --height 1080 --save-video --show-video
 ```
 
 ### Train Handstand Policy
@@ -124,10 +128,15 @@ python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrai
     --x-vel 1.5 --y-vel 0.5 --yaw-vel 1.0 \
     --episodes 20 --video-path custom_videos
 
-# Command sequence evaluation
+# Command sequence evaluation with video
 python main.py command-sequence Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
     --commands "0,0,0;1,0,0;1,0,1;0,1,0;-1,0,0" \
-    --steps-per-command 300
+    --steps-per-command 300 --show-video
+
+# Complex command sequence with custom video settings
+python main.py command-sequence Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
+    --commands "0,0,0;1.5,0,0;1.5,0.5,1.0;0,1,0;-1,0,0;0,0,3.14" \
+    --steps-per-command 200 --camera track --width 1280 --height 720
 ```
 
 ### Configuration Management
@@ -178,11 +187,47 @@ The evaluation system provides comprehensive metrics:
 
 ## Video Generation
 
+### Features (Matching Jupyter Notebook)
 Evaluation automatically generates videos showing:
 - Robot locomotion with command visualization
-- Contact point indicators
+- Contact point indicators  
 - Perturbation force visualization
 - Joystick command overlays
+- **Interactive video display** (like `media.show_video()` in notebook)
+- **Command sequence videos** showing policy following different commands
+- **Multiple camera angles** (track, side, front)
+- **Custom video resolution** and quality
+
+### Video Options
+```bash
+# Save video only (default)
+--save-video --no-show-video
+
+# Display video interactively (like notebook)
+--show-video
+
+# Both save and display
+--save-video --show-video
+
+# Custom camera angles
+--camera track    # Follow robot (default)
+--camera side     # Side view
+--camera front    # Front view
+
+# Custom resolution
+--width 1920 --height 1080    # Full HD
+--width 1280 --height 720     # HD
+--width 640 --height 480      # Standard (default)
+```
+
+### Command Sequence Videos
+Create videos showing the robot following different velocity commands:
+```bash
+# Show robot adapting to different commands
+python main.py command-sequence Go1JoystickFlatTerrain checkpoint.pkl \
+    --commands "0,0,0;1,0,0;0,1,0;0,0,1.57;-1,0,0" \
+    --show-video --camera track
+```
 
 ## Advanced Usage
 

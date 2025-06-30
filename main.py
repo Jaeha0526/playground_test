@@ -104,8 +104,12 @@ def evaluate(
     yaw_vel: float = typer.Option(0.0, "--yaw-vel", help="Angular velocity command"),
     episodes: int = typer.Option(5, "--episodes", "-e", help="Number of episodes to evaluate"),
     save_video: bool = typer.Option(True, "--save-video/--no-video", help="Save evaluation video"),
+    show_video: bool = typer.Option(False, "--show-video", help="Display video interactively"),
     video_path: str = typer.Option("videos", "--video-path", help="Directory to save videos"),
     show_plots: bool = typer.Option(True, "--plots/--no-plots", help="Show evaluation plots"),
+    camera: str = typer.Option("track", "--camera", help="Camera view: track, side, front"),
+    width: int = typer.Option(640, "--width", help="Video width"),
+    height: int = typer.Option(480, "--height", help="Video height"),
 ):
     """Evaluate a trained locomotion policy."""
     console.print(f"[bold blue]Evaluating {env_name}[/bold blue]")
@@ -119,6 +123,9 @@ def evaluate(
     config.num_episodes = episodes
     config.save_video = save_video
     config.video_path = video_path
+    config.camera = camera
+    config.width = width
+    config.height = height
     
     # Load checkpoint
     import jax
@@ -161,9 +168,21 @@ def evaluate(
             evaluator.visualize_results(evaluation_data)
         
         # Create video
-        if save_video:
+        if save_video or show_video:
             frames = evaluator.create_video(evaluation_data)
-            console.print(f"[bold green]Video saved to {video_path}[/bold green]")
+            if save_video:
+                console.print(f"[bold green]Video saved to {video_path}[/bold green]")
+            if show_video:
+                console.print("[bold yellow]Displaying video...[/bold yellow]")
+                try:
+                    import mediapy as media
+                    fps = 1.0 / evaluator.eval_env.dt / config.render_every
+                    media.show_video(frames, fps=fps, loop=False)
+                    console.print("[bold green]Video displayed successfully![/bold green]")
+                except ImportError:
+                    console.print("[bold red]mediapy not available for video display[/bold red]")
+                except Exception as e:
+                    console.print(f"[bold red]Failed to display video: {e}[/bold red]")
         
         console.print("[bold green]Evaluation completed successfully![/bold green]")
         
@@ -239,6 +258,11 @@ def command_sequence(
     ),
     steps_per_command: int = typer.Option(200, "--steps", help="Steps per command"),
     save_video: bool = typer.Option(True, "--save-video/--no-video", help="Save video"),
+    show_video: bool = typer.Option(False, "--show-video", help="Display video interactively"),
+    video_path: str = typer.Option("videos", "--video-path", help="Directory to save videos"),
+    camera: str = typer.Option("track", "--camera", help="Camera view: track, side, front"),
+    width: int = typer.Option(640, "--width", help="Video width"),
+    height: int = typer.Option(480, "--height", help="Video height"),
 ):
     """Evaluate policy with a sequence of commands."""
     console.print(f"[bold blue]Running command sequence evaluation for {env_name}[/bold blue]")
@@ -251,10 +275,89 @@ def command_sequence(
     
     console.print(f"Commands: {command_list}")
     
-    # Load checkpoint and setup inference (similar to evaluate command)
-    # ... (implementation similar to evaluate command)
+    # Load checkpoint and setup inference
+    import jax
+    from orbax import checkpoint as ocp
+    from brax.training.agents.ppo import networks as ppo_networks
+    from mujoco_playground.config import locomotion_params
     
-    console.print("[bold green]Command sequence evaluation completed![/bold green]")
+    try:
+        # Load policy parameters
+        orbax_checkpointer = ocp.PyTreeCheckpointer()
+        params = orbax_checkpointer.restore(checkpoint_path)
+        
+        # Setup inference function
+        env = registry.load(env_name)
+        ppo_params = locomotion_params.brax_ppo_config(env_name)
+        
+        network_factory = ppo_networks.make_ppo_networks
+        if "network_factory" in ppo_params:
+            network_factory = lambda: ppo_networks.make_ppo_networks(**ppo_params.network_factory)
+        
+        networks = network_factory(
+            env.observation_size, env.action_size, preprocess_observations_fn=None
+        )
+        make_inference_fn = networks.make_policy
+        
+        # Setup evaluation config
+        config = get_default_eval_config(env_name)
+        config.save_video = save_video
+        config.video_path = video_path
+        config.camera = camera
+        config.width = width
+        config.height = height
+        
+        # Run command sequence evaluation
+        evaluator = LocomotionEvaluator(config)
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            progress.add_task(description="Running command sequence evaluation...", total=None)
+            
+            evaluation_data = evaluator.run_command_sequence_evaluation(
+                make_inference_fn, params, command_list, steps_per_command
+            )
+        
+        # Create video
+        if save_video or show_video:
+            console.print("[bold yellow]Creating command sequence video...[/bold yellow]")
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            video_file = f"{video_path}/{env_name}_command_sequence_{timestamp}.mp4"
+            
+            # Use video renderer to create video
+            frames = evaluator.video_renderer.render(
+                evaluator.eval_env,
+                evaluation_data['rollout'],
+                evaluation_data['modify_scene_fns'],
+                video_file if save_video else None
+            )
+            
+            if save_video:
+                console.print(f"[bold green]Command sequence video saved to {video_file}[/bold green]")
+            
+            if show_video:
+                console.print("[bold yellow]Displaying command sequence video...[/bold yellow]")
+                try:
+                    import mediapy as media
+                    fps = 1.0 / evaluator.eval_env.dt / config.render_every
+                    media.show_video(frames, fps=fps, loop=False)
+                    console.print("[bold green]Video displayed successfully![/bold green]")
+                except ImportError:
+                    console.print("[bold red]mediapy not available for video display[/bold red]")
+                except Exception as e:
+                    console.print(f"[bold red]Failed to display video: {e}[/bold red]")
+        
+        # Print summary
+        console.print("[bold green]Command sequence evaluation completed![/bold green]")
+        console.print(f"Evaluated {len(command_list)} commands with {steps_per_command} steps each")
+        
+    except Exception as e:
+        console.print(f"[bold red]Command sequence evaluation failed: {e}[/bold red]")
+        raise typer.Exit(1)
 
 
 @app.command()
