@@ -45,7 +45,7 @@ def list_envs():
 def train(
     env_name: str = typer.Argument(..., help="Environment name to train"),
     timesteps: int = typer.Option(100_000_000, "--timesteps", "-t", help="Number of training timesteps"),
-    checkpoint_dir: Optional[str] = typer.Option(None, "--checkpoint-dir", "-c", help="Directory to save checkpoints"),
+    checkpoint_off: bool = typer.Option(False, "--checkpoint-off", help="Disable checkpoint saving"),
     restore_from: Optional[str] = typer.Option(None, "--restore-from", "-r", help="Checkpoint path to restore from"),
     config_file: Optional[str] = typer.Option(None, "--config", help="JSON config file"),
     seed: int = typer.Option(1, "--seed", help="Random seed"),
@@ -61,12 +61,19 @@ def train(
     else:
         config = get_default_training_config(env_name)
     
+    # Generate timestamp once for consistent naming
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     # Override with CLI arguments
     config.env_name = env_name
     config.num_timesteps = timesteps
     config.seed = seed
-    if checkpoint_dir:
-        config.checkpoint_logdir = checkpoint_dir
+    config.timestamp = timestamp
+    
+    # Enable checkpointing by default unless disabled
+    if not checkpoint_off:
+        config.checkpoint_logdir = f"checkpoints/{env_name}_{timestamp}"
     
     # Initialize trainer
     trainer = LocomotionTrainer(config)
@@ -89,6 +96,8 @@ def train(
         if trainer.checkpoint_path:
             latest_checkpoint = trainer.get_latest_checkpoint()
             console.print(f"Latest checkpoint: {latest_checkpoint}")
+        else:
+            console.print("[bold yellow]Checkpointing was disabled[/bold yellow]")
         
     except Exception as e:
         console.print(f"[bold red]Training failed: {e}[/bold red]")
@@ -203,7 +212,7 @@ def evaluate(
 
 @app.command()
 def train_handstand(
-    checkpoint_dir: str = typer.Option("checkpoints", "--checkpoint-dir", "-c", help="Directory to save checkpoints"),
+    checkpoint_off: bool = typer.Option(False, "--checkpoint-off", help="Disable checkpoint saving"),
     finetune: bool = typer.Option(False, "--finetune", help="Finetune with energy penalties"),
     restore_from: Optional[str] = typer.Option(None, "--restore-from", "-r", help="Checkpoint to restore from"),
 ):
@@ -211,9 +220,17 @@ def train_handstand(
     env_name = "Go1Handstand"
     console.print(f"[bold blue]Training {env_name}[/bold blue]")
     
+    # Generate timestamp once for consistent naming
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     # Setup config
     config = get_default_training_config(env_name)
-    config.checkpoint_logdir = checkpoint_dir
+    config.timestamp = timestamp
+    
+    # Enable checkpointing by default unless disabled
+    if not checkpoint_off:
+        config.checkpoint_logdir = f"checkpoints/{env_name}_{timestamp}"
     
     trainer = LocomotionTrainer(config)
     

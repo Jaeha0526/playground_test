@@ -41,13 +41,57 @@ python main.py list-envs
 
 ### Train a Policy
 ```bash
-# Train Go1 joystick policy
-python main.py train Go1JoystickFlatTerrain --timesteps 100000000 --checkpoint-dir checkpoints
+# Train Go1 joystick policy (checkpointing enabled by default)
+python main.py train Go1JoystickFlatTerrain --timesteps 100000000
+
+# Train without checkpointing
+python main.py train Go1JoystickFlatTerrain --timesteps 100000000 --checkpoint-off
+
+# Resume from checkpoint
+python main.py train Go1JoystickFlatTerrain --restore-from checkpoints/Go1JoystickFlatTerrain_20241230_143000/50000000
 
 # Train with custom config
 python main.py create-config Go1JoystickFlatTerrain config.json
 python main.py train Go1JoystickFlatTerrain --config config.json
 ```
+
+### 📊 Training Progress Monitoring
+
+Training automatically saves **real-time progress** to organized directories:
+
+#### Reward Graphs & Data
+- **Directory**: `reward_graphs/{env_name}_{timestamp}/`
+- **Files**:
+  - `training_progress_current.png` - Real-time reward graph (updates every evaluation)
+  - `training_progress.json` - Complete training data including:
+    - Training configuration
+    - Reward progression (steps, rewards, standard deviations)
+    - Current metrics and progress percentage
+    - Timing information
+    - Full evaluation metrics
+
+#### Checkpoints
+- **Directory**: `checkpoints/{env_name}_{timestamp}/` (matches reward graph timestamp)
+- **Files**: `{step_number}/` directories containing model parameters
+- **Frequency**: Every 10M steps by default
+- **Control**: Use `--checkpoint-off` to disable
+
+#### Example Directory Structure
+```
+reward_graphs/Go1JoystickFlatTerrain_20241230_143000/
+├── training_progress_current.png    # Real-time reward plot
+└── training_progress.json           # Complete training data
+
+checkpoints/Go1JoystickFlatTerrain_20241230_143000/
+├── 10000000/                        # Checkpoint at 10M steps
+├── 20000000/                        # Checkpoint at 20M steps
+└── 30000000/                        # Checkpoint at 30M steps
+```
+
+#### Monitoring Your Training
+1. **View real-time progress**: Open `training_progress_current.png` in any image viewer
+2. **Analyze detailed data**: Check `training_progress.json` for comprehensive metrics
+3. **Resume training**: Use any checkpoint directory with `--restore-from`
 
 ### Evaluate a Policy
 ```bash
@@ -98,23 +142,25 @@ playground_test/
 ### Training Examples
 
 ```bash
-# Basic training
+# Basic training (checkpointing enabled by default)
 python main.py train Go1JoystickFlatTerrain
 
 # Training with custom parameters
 python main.py train Go1JoystickFlatTerrain \
     --timesteps 200000000 \
-    --checkpoint-dir my_checkpoints \
     --seed 42
+
+# Training without checkpoints (for quick experiments)
+python main.py train Go1JoystickFlatTerrain \
+    --timesteps 1000000 --checkpoint-off
 
 # Resume training from checkpoint
 python main.py train Go1JoystickFlatTerrain \
-    --restore-from checkpoints/Go1JoystickFlatTerrain/50000000
+    --restore-from checkpoints/Go1JoystickFlatTerrain_20241230_143000/50000000
 
 # Train bipedal humanoid
 python main.py train BerkeleyHumanoidJoystickFlatTerrain \
-    --timesteps 200000000 \
-    --checkpoint-dir humanoid_checkpoints
+    --timesteps 200000000
 ```
 
 ### Evaluation Examples

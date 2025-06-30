@@ -11,10 +11,9 @@ def plot_training_progress(x_data: List[int],
                           y_data: List[float], 
                           y_err: List[float],
                           max_timesteps: int,
-                          title: str = "Training Progress"):
+                          title: str = "Training Progress",
+                          save_dir: Optional[str] = None):
     """Plot training progress with error bars."""
-    clear_output(wait=True)
-    
     plt.figure(figsize=(10, 6))
     plt.xlim([0, max_timesteps * 1.25])
     plt.xlabel("# environment steps")
@@ -23,7 +22,20 @@ def plot_training_progress(x_data: List[int],
     plt.errorbar(x_data, y_data, yerr=y_err, color="blue", alpha=0.7)
     plt.grid(True, alpha=0.3)
     
-    display(plt.gcf())
+    if save_dir:
+        # Save the plot
+        from pathlib import Path
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save current progress plot (overwrites each time for real-time updates)
+        current_plot_path = save_path / "training_progress_current.png"
+        plt.savefig(current_plot_path, dpi=300, bbox_inches='tight')
+    else:
+        # Original behavior for Jupyter/IPython
+        clear_output(wait=True)
+        display(plt.gcf())
+    
     plt.close()
 
 

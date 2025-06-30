@@ -41,10 +41,19 @@ class LocomotionTrainer:
         # Override PPO params with config values
         self._update_ppo_params()
         
-        # Setup checkpointing if specified
+        # Use shared timestamp for consistent naming between reward graphs and checkpoints
+        timestamp = config.timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.reward_graph_dir = f"reward_graphs/{config.env_name}_{timestamp}"
+        
+        # Setup checkpointing if specified - use same timestamp as reward graphs
         self.checkpoint_path = None
         if config.checkpoint_logdir:
-            self.checkpoint_path = epath.Path(config.checkpoint_logdir).resolve() / config.env_name
+            # If checkpoint_logdir doesn't already have timestamp, use the same as reward graphs
+            if f"{config.env_name}_{timestamp}" in config.checkpoint_logdir:
+                self.checkpoint_path = epath.Path(config.checkpoint_logdir).resolve()
+            else:
+                # Legacy support: if user provides custom path, use it as-is
+                self.checkpoint_path = epath.Path(config.checkpoint_logdir).resolve() / config.env_name
             self.checkpoint_path.mkdir(parents=True, exist_ok=True)
             
     def _update_ppo_params(self):
@@ -53,7 +62,6 @@ class LocomotionTrainer:
             'num_timesteps': self.config.num_timesteps,
             'num_evals': self.config.num_evals,
             'episode_length': self.config.episode_length,
-            'eval_every': self.config.eval_every,
             'deterministic_eval': self.config.deterministic_eval,
             'normalize_observations': self.config.normalize_observations,
             'reward_scaling': self.config.reward_scaling,
@@ -62,12 +70,15 @@ class LocomotionTrainer:
             'batch_size': self.config.batch_size,
             'num_minibatches': self.config.num_minibatches,
             'num_updates_per_batch': self.config.num_updates_per_batch,
+            'unroll_length': self.config.unroll_length,
             'learning_rate': self.config.learning_rate,
             'entropy_cost': self.config.entropy_cost,
             'discounting': self.config.discounting,
             'gae_lambda': self.config.gae_lambda,
             'clipping_epsilon': self.config.clipping_epsilon,
             'normalize_advantage': self.config.normalize_advantage,
+            'action_repeat': self.config.action_repeat,
+            'max_grad_norm': self.config.max_grad_norm,
         })
     
     def _progress_callback(self, num_steps: int, metrics: Dict[str, Any]):
@@ -77,19 +88,70 @@ class LocomotionTrainer:
         self.training_data['y'].append(metrics["eval/episode_reward"])
         self.training_data['y_err'].append(metrics["eval/episode_reward_std"])
         
-        # Update plot
+        # Update plot and save to file
         plot_training_progress(
             self.training_data['x'],
             self.training_data['y'],
             self.training_data['y_err'],
             self.config.num_timesteps,
-            title=f"Training {self.config.env_name}"
+            title=f"Training {self.config.env_name}",
+            save_dir=self.reward_graph_dir
         )
+        
+        # Save training data to JSON file
+        self._save_training_data_json(num_steps, metrics)
         
         # Print progress
         elapsed = self.times[-1] - self.times[1] if len(self.times) > 1 else 0
         print(f"Step: {num_steps:,} | Reward: {metrics['eval/episode_reward']:.3f} ± "
               f"{metrics['eval/episode_reward_std']:.3f} | Elapsed: {elapsed}")
+        print(f"Progress saved to: {self.reward_graph_dir}/")
+    
+    def _save_training_data_json(self, num_steps: int, metrics: Dict[str, Any]):
+        """Save training data to JSON file."""
+        from pathlib import Path
+        
+        # Create directory if it doesn't exist
+        save_path = Path(self.reward_graph_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Prepare training progress data
+        current_time = datetime.now()
+        elapsed_total = current_time - self.times[0]
+        elapsed_train = current_time - self.times[1] if len(self.times) > 1 else elapsed_total
+        
+        training_progress = {
+            "config": {
+                "env_name": self.config.env_name,
+                "num_timesteps": self.config.num_timesteps,
+                "num_envs": self.config.num_envs,
+                "batch_size": self.config.batch_size,
+                "learning_rate": self.config.learning_rate,
+            },
+            "training_data": {
+                "steps": self.training_data['x'],
+                "rewards": self.training_data['y'],
+                "reward_stds": self.training_data['y_err'],
+            },
+            "current_metrics": {
+                "step": num_steps,
+                "reward_mean": metrics["eval/episode_reward"],
+                "reward_std": metrics["eval/episode_reward_std"],
+                "progress_percent": (num_steps / self.config.num_timesteps) * 100,
+            },
+            "timing": {
+                "started_at": self.times[0].isoformat(),
+                "current_time": current_time.isoformat(),
+                "elapsed_total_seconds": elapsed_total.total_seconds(),
+                "elapsed_training_seconds": elapsed_train.total_seconds(),
+            },
+            "full_metrics": dict(metrics)  # Save all available metrics
+        }
+        
+        # Save to JSON file
+        json_path = save_path / "training_progress.json"
+        with open(json_path, 'w') as f:
+            json.dump(training_progress, f, indent=2, default=str)
     
     def _policy_params_callback(self, current_step: int, make_policy: Callable, params: Any):
         """Callback to save policy parameters during training."""

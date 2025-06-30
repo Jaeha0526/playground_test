@@ -11,25 +11,29 @@ class TrainingConfig:
     """Training configuration parameters."""
     env_name: str = 'Go1JoystickFlatTerrain'
     num_timesteps: int = 100_000_000
-    num_evals: int = 20
+    num_evals: int = 10
     episode_length: int = 1000
     eval_every: int = 1_000_000
     deterministic_eval: bool = True
     normalize_observations: bool = True
-    reward_scaling: float = 1e-3
+    reward_scaling: float = 1.0
     seed: int = 1
+    timestamp: Optional[str] = None
     
-    # PPO specific parameters
-    num_envs: int = 2048
-    batch_size: int = 1024
+    # PPO specific parameters (matching original notebook)
+    num_envs: int = 8192
+    batch_size: int = 256
     num_minibatches: int = 32
     num_updates_per_batch: int = 4
+    unroll_length: int = 20
     learning_rate: float = 3e-4
     entropy_cost: float = 1e-2
     discounting: float = 0.97
     gae_lambda: float = 0.95
     clipping_epsilon: float = 0.3
     normalize_advantage: bool = True
+    action_repeat: int = 1
+    max_grad_norm: float = 1.0
     
     # Checkpointing
     checkpoint_logdir: Optional[str] = None
@@ -87,8 +91,10 @@ def get_default_training_config(env_name: str) -> TrainingConfig:
     config = TrainingConfig()
     config.env_name = env_name
     
-    # Environment-specific adjustments
-    if 'Humanoid' in env_name:
+    # Use original notebook's proven timestep values
+    if env_name in ("Go1JoystickFlatTerrain", "Go1JoystickRoughTerrain"):
+        config.num_timesteps = 200_000_000  # Original notebook setting
+    elif 'Humanoid' in env_name:
         config.num_timesteps = 200_000_000
         config.learning_rate = 1e-4
     elif 'Handstand' in env_name:
