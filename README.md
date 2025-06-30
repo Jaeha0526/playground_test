@@ -21,13 +21,14 @@ git clone <repo-url>
 cd playground_test
 ```
 
-2. Install dependencies:
+2. Run the setup script:
 ```bash
-pip install -r requirements.txt
+bash setup.sh
 ```
 
-3. Verify installation:
+3. Activate the virtual environment and verify installation:
 ```bash
+source venv/bin/activate
 python main.py list-envs
 ```
 
@@ -221,10 +222,16 @@ results = evaluator.evaluate_policy(make_inference_fn, params)
 
 ### Common Issues
 
-1. **GPU Memory Issues**: Reduce `num_envs` or `batch_size`
-2. **Training Instability**: Adjust learning rate or use different seed
-3. **Evaluation Errors**: Ensure checkpoint path is correct
-4. **Video Generation Fails**: Check OpenGL/MuJoCo rendering setup
+1. **Setup Script Timeout**: If `bash setup.sh` hangs during verification, the installation is likely complete. Press Ctrl+C and test with:
+   ```bash
+   source venv/bin/activate
+   python main.py list-envs
+   ```
+
+2. **GPU Memory Issues**: Reduce `num_envs` or `batch_size`
+3. **Training Instability**: Adjust learning rate or use different seed
+4. **Evaluation Errors**: Ensure checkpoint path is correct
+5. **Video Generation Fails**: Check OpenGL/MuJoCo rendering setup
 
 ### GPU Requirements
 
