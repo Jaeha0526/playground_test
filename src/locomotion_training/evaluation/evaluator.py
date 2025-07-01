@@ -1,6 +1,7 @@
 """Evaluation module for trained locomotion policies."""
 
 import functools
+import json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Callable
 
@@ -8,8 +9,12 @@ import jax
 import jax.numpy as jp
 import numpy as np
 from datetime import datetime
+from brax.training.agents.ppo import networks as ppo_networks
+from flax.training import orbax_utils
+from orbax import checkpoint as ocp
 
 from mujoco_playground import registry
+from mujoco_playground.config import locomotion_params
 from ..config.config import EvalConfig
 from ..utils.plotting import (
     plot_foot_trajectories, 
@@ -28,6 +33,7 @@ class LocomotionEvaluator:
         self.config = config
         self.env = registry.load(config.env_name)
         self.env_cfg = registry.get_default_config(config.env_name)
+        self.current_model_id = None  # Track current model for video naming
         
         # Apply config modifications
         if config.enable_perturbations and hasattr(self.env_cfg, 'pert_config'):
@@ -258,6 +264,29 @@ class LocomotionEvaluator:
         
         return metrics
     
+    def _extract_model_id(self, checkpoint_path: str) -> str:
+        """Extract model ID from checkpoint path for video naming.
+        
+        Examples:
+        - checkpoints/Go1JoystickFlatTerrain_20250630_224046/best -> Go1JoystickFlatTerrain_20250630_224046_best
+        - checkpoints/Go1JoystickFlatTerrain_20250630_224046/50000000 -> Go1JoystickFlatTerrain_20250630_224046_50000000
+        """
+        path = Path(checkpoint_path)
+        
+        # Get the parent directory name (experiment name with timestamp)
+        if path.parent.name.startswith(self.config.env_name):
+            experiment_name = path.parent.name
+        else:
+            # Fallback: use the parent directory name as-is
+            experiment_name = path.parent.name
+        
+        # Get the checkpoint stage (step number or "best")
+        stage = path.name
+        
+        # Combine them
+        model_id = f"{experiment_name}_{stage}"
+        return model_id
+    
     def visualize_results(self, evaluation_data: Dict[str, Any]):
         """Create comprehensive visualization of evaluation results."""
         print("Creating evaluation visualizations...")
@@ -301,7 +330,12 @@ class LocomotionEvaluator:
         """Create and optionally save evaluation video."""
         if save_path is None and self.config.save_video:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_path = f"{self.config.video_path}/{self.config.env_name}_{timestamp}.mp4"
+            
+            # Include model ID in filename if available
+            if self.current_model_id:
+                save_path = f"{self.config.video_path}/{self.current_model_id}_{timestamp}.mp4"
+            else:
+                save_path = f"{self.config.video_path}/{self.config.env_name}_{timestamp}.mp4"
         
         frames = self.video_renderer.render(
             self.eval_env,
@@ -349,3 +383,118 @@ class LocomotionEvaluator:
         }
         
         return combined_data
+    
+    def load_checkpoint_for_evaluation(self, checkpoint_path: str) -> Tuple[Callable, Any]:
+        """Load a checkpoint and recreate the inference function.
+        
+        This method properly reconstructs the make_inference_fn and loads parameters
+        following the same pattern as the brax PPO training code.
+        
+        Args:
+            checkpoint_path: Path to the checkpoint directory
+            
+        Returns:
+            Tuple of (make_inference_fn, params)
+        """
+        checkpoint_path = Path(checkpoint_path).resolve()
+        
+        # Set model ID for video naming when loading checkpoint directly
+        self.current_model_id = self._extract_model_id(str(checkpoint_path))
+        
+        # Load environment config if available
+        config_path = checkpoint_path / "config.json"
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                env_config_dict = json.load(f)
+            print(f"Loaded environment config from {config_path}")
+        else:
+            # Fall back to default config
+            env_config_dict = registry.get_default_config(self.config.env_name).to_dict()
+            print(f"Using default environment config (no config.json found)")
+        
+        # Load the checkpoint parameters first
+        orbax_checkpointer = ocp.PyTreeCheckpointer()
+        restored_checkpoint = orbax_checkpointer.restore(checkpoint_path)
+        
+        # Extract components from checkpoint - this matches the brax PPO training state structure
+        # The checkpoint contains: [running_statistics, policy_state, value_state]  
+        running_stats, policy_state, value_state = restored_checkpoint
+        
+        # Get PPO parameters for the environment to recreate the exact same network factory
+        ppo_params = locomotion_params.brax_ppo_config(self.config.env_name)
+        
+        # Setup network factory exactly as in training
+        network_factory = ppo_networks.make_ppo_networks
+        if "network_factory" in ppo_params:
+            network_factory = functools.partial(
+                ppo_networks.make_ppo_networks,
+                **ppo_params.network_factory
+            )
+        
+        # Create environment for getting observation/action specs
+        env = registry.load(self.config.env_name)
+        
+        # For now, skip normalization to test basic inference
+        # TODO: Fix normalization handling for structured observations
+        def dummy_preprocess(obs, rng=None):
+            """Identity preprocessing function for testing."""
+            return obs
+        
+        # Create networks with dummy preprocessing for now
+        networks = network_factory(
+            observation_size=env.observation_size,
+            action_size=env.action_size,
+            preprocess_observations_fn=dummy_preprocess
+        )
+        
+        # Create the make_inference_fn following the brax PPO pattern exactly
+        def make_inference_fn(params, deterministic=False):
+            """Create inference function that returns action and extra info."""
+            
+            def inference_fn(obs, rng):
+                # The policy network already handles preprocessing via the network factory
+                # and expects the full policy state structure
+                logits = networks.policy_network.apply(params, obs, rng)
+                
+                # Create action distribution and sample/get mode
+                action_distribution = networks.parametric_action_distribution.apply({}, logits)
+                
+                if deterministic:
+                    # For deterministic inference, use mode of distribution
+                    action = action_distribution.mode()
+                else:
+                    # Sample from the distribution
+                    action = action_distribution.sample(seed=rng)
+                
+                # Return action and extra info (following brax pattern)
+                return action, {}
+            
+            return inference_fn
+        
+        print(f"Successfully loaded checkpoint from {checkpoint_path}")
+        print(f"Policy parameters keys: {list(policy_state['params'].keys())}")
+        print(f"Running stats keys: {list(running_stats.keys())}")
+        return make_inference_fn, policy_state
+    
+    def evaluate_checkpoint(self, 
+                          checkpoint_path: str,
+                          command: Optional[jp.ndarray] = None,
+                          custom_env_config: Optional[Dict] = None) -> Dict[str, Any]:
+        """Load a checkpoint and evaluate it.
+        
+        Args:
+            checkpoint_path: Path to the checkpoint directory
+            command: Command to track [x_vel, y_vel, yaw_vel]
+            custom_env_config: Custom environment configuration
+            
+        Returns:
+            Dictionary containing evaluation metrics and trajectories
+        """
+        # Set model ID for video naming
+        self.current_model_id = self._extract_model_id(checkpoint_path)
+        
+        # Load checkpoint and recreate inference function
+        make_inference_fn, params = self.load_checkpoint_for_evaluation(checkpoint_path)
+        
+        # Run evaluation
+        return self.evaluate_policy(make_inference_fn, params, command, custom_env_config)

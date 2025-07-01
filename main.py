@@ -6,6 +6,7 @@ from typing import Optional, List
 from pathlib import Path
 import json
 
+import jax.numpy as jp
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -96,6 +97,9 @@ def train(
         if trainer.checkpoint_path:
             latest_checkpoint = trainer.get_latest_checkpoint()
             console.print(f"Latest checkpoint: {latest_checkpoint}")
+            best_checkpoint = trainer.get_best_checkpoint()
+            if best_checkpoint:
+                console.print(f"Best checkpoint: {best_checkpoint} (reward: {trainer.best_reward:.3f})")
         else:
             console.print("[bold yellow]Checkpointing was disabled[/bold yellow]")
         
@@ -136,32 +140,12 @@ def evaluate(
     config.width = width
     config.height = height
     
-    # Load checkpoint
-    import jax
-    from orbax import checkpoint as ocp
-    from brax.training.agents.ppo import networks as ppo_networks
-    from mujoco_playground.config import locomotion_params
-    
+    # Create evaluator and run evaluation
     try:
-        # Load policy parameters
-        orbax_checkpointer = ocp.PyTreeCheckpointer()
-        params = orbax_checkpointer.restore(checkpoint_path)
-        
-        # Setup inference function
-        env = registry.load(env_name)
-        ppo_params = locomotion_params.brax_ppo_config(env_name)
-        
-        network_factory = ppo_networks.make_ppo_networks
-        if "network_factory" in ppo_params:
-            network_factory = lambda: ppo_networks.make_ppo_networks(**ppo_params.network_factory)
-        
-        networks = network_factory(
-            env.observation_size, env.action_size, preprocess_observations_fn=None
-        )
-        make_inference_fn = networks.make_policy
-        
-        # Run evaluation
         evaluator = LocomotionEvaluator(config)
+        
+        # Create command array from velocity parameters
+        command = jp.array([x_vel, y_vel, yaw_vel]) if any([x_vel, y_vel, yaw_vel]) else None
         
         with Progress(
             SpinnerColumn(),
@@ -170,7 +154,8 @@ def evaluate(
         ) as progress:
             progress.add_task(description="Running evaluation...", total=None)
             
-            evaluation_data = evaluator.evaluate_policy(make_inference_fn, params)
+            # Use evaluate_checkpoint which automatically includes model ID in video filenames
+            evaluation_data = evaluator.evaluate_checkpoint(checkpoint_path, command)
         
         # Show results
         if show_plots:
@@ -294,27 +279,40 @@ def command_sequence(
     
     # Load checkpoint and setup inference
     import jax
+    import functools
     from orbax import checkpoint as ocp
-    from brax.training.agents.ppo import networks as ppo_networks
+    from brax.training.agents.ppo import networks as ppo_networks, train as ppo
     from mujoco_playground.config import locomotion_params
+    from mujoco_playground import wrapper
     
     try:
-        # Load policy parameters
-        orbax_checkpointer = ocp.PyTreeCheckpointer()
-        params = orbax_checkpointer.restore(checkpoint_path)
-        
-        # Setup inference function
+        # Load checkpoint using same pattern as notebook (via ppo.train with restore)
         env = registry.load(env_name)
         ppo_params = locomotion_params.brax_ppo_config(env_name)
         
+        # Setup network factory exactly as in training
         network_factory = ppo_networks.make_ppo_networks
         if "network_factory" in ppo_params:
-            network_factory = lambda: ppo_networks.make_ppo_networks(**ppo_params.network_factory)
+            network_factory = functools.partial(
+                ppo_networks.make_ppo_networks,
+                **ppo_params.network_factory
+            )
         
-        networks = network_factory(
-            env.observation_size, env.action_size, preprocess_observations_fn=None
+        # Use ppo.train with num_timesteps=0 to load checkpoint (matching test_evaluate.py)
+        train_params = dict(ppo_params)
+        train_params.update({
+            'num_timesteps': 0,  # Skip training, just load
+            'num_evals': 1,
+            'network_factory': network_factory,
+        })
+        
+        make_inference_fn, params, _ = ppo.train(
+            environment=env,
+            eval_env=env,
+            wrap_env_fn=wrapper.wrap_for_brax_training,
+            restore_checkpoint_path=checkpoint_path,
+            **train_params
         )
-        make_inference_fn = networks.make_policy
         
         # Setup evaluation config
         config = get_default_eval_config(env_name)

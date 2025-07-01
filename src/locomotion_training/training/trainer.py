@@ -32,6 +32,8 @@ class LocomotionTrainer:
         self.config = config
         self.training_data = {'x': [], 'y': [], 'y_err': []}
         self.times = [datetime.now()]
+        self.best_reward = float('-inf')
+        self.best_step = 0
         
         # Setup environment and training parameters
         self.env = registry.load(config.env_name)
@@ -101,11 +103,20 @@ class LocomotionTrainer:
         # Save training data to JSON file
         self._save_training_data_json(num_steps, metrics)
         
+        # Save checkpoint at same time as reward plot (evaluation intervals)
+        checkpoint_msg = ""
+        if self.checkpoint_path:
+            current_reward = metrics["eval/episode_reward"]
+            is_best = self._save_checkpoint_at_evaluation(num_steps, current_reward)
+            checkpoint_msg = f" | Checkpoint saved"
+            if is_best:
+                checkpoint_msg += " (NEW BEST!)"
+        
         # Print progress
         elapsed = self.times[-1] - self.times[1] if len(self.times) > 1 else 0
         print(f"Step: {num_steps:,} | Reward: {metrics['eval/episode_reward']:.3f} ± "
               f"{metrics['eval/episode_reward_std']:.3f} | Elapsed: {elapsed}")
-        print(f"Progress saved to: {self.reward_graph_dir}/")
+        print(f"Progress saved to: {self.reward_graph_dir}/{checkpoint_msg}")
     
     def _save_training_data_json(self, num_steps: int, metrics: Dict[str, Any]):
         """Save training data to JSON file."""
@@ -153,17 +164,44 @@ class LocomotionTrainer:
         with open(json_path, 'w') as f:
             json.dump(training_progress, f, indent=2, default=str)
     
-    def _policy_params_callback(self, current_step: int, make_policy: Callable, params: Any):
-        """Callback to save policy parameters during training."""
-        if not self.checkpoint_path:
-            return
+    def _save_checkpoint_at_evaluation(self, num_steps: int, current_reward: float) -> bool:
+        """Save checkpoint at evaluation intervals (synced with reward plots)."""
+        if not self.checkpoint_path or not hasattr(self, '_current_params'):
+            return False
+        
+        orbax_checkpointer = ocp.PyTreeCheckpointer()
+        save_args = orbax_utils.save_args_from_target(self._current_params)
+        
+        # Always save regular checkpoint
+        path = self.checkpoint_path / f"{num_steps}"
+        orbax_checkpointer.save(path, self._current_params, force=True, save_args=save_args)
+        
+        # Check if this is the best reward so far
+        is_best = current_reward > self.best_reward
+        if is_best:
+            self.best_reward = current_reward
+            self.best_step = num_steps
             
-        if current_step % self.config.save_interval == 0:
-            orbax_checkpointer = ocp.PyTreeCheckpointer()
-            save_args = orbax_utils.save_args_from_target(params)
-            path = self.checkpoint_path / f"{current_step}"
-            orbax_checkpointer.save(path, params, force=True, save_args=save_args)
-            print(f"Saved checkpoint at step {current_step}")
+            # Save best checkpoint
+            best_path = self.checkpoint_path / "best"
+            orbax_checkpointer.save(best_path, self._current_params, force=True, save_args=save_args)
+            
+            # Update best info in JSON
+            best_info = {
+                "best_reward": float(current_reward),
+                "best_step": num_steps,
+                "saved_at": datetime.now().isoformat()
+            }
+            best_json_path = self.checkpoint_path / "best_info.json"
+            with open(best_json_path, 'w') as f:
+                json.dump(best_info, f, indent=2)
+        
+        return is_best
+    
+    def _policy_params_callback(self, current_step: int, make_policy: Callable, params: Any):
+        """Store current policy parameters for checkpoint saving."""
+        # Store params for use in progress callback
+        self._current_params = params
     
     def train(self, 
               restore_checkpoint_path: Optional[str] = None,
@@ -276,10 +314,20 @@ class LocomotionTrainer:
         if not self.checkpoint_path or not self.checkpoint_path.exists():
             return None
         
-        checkpoints = [p for p in self.checkpoint_path.glob("*") if p.is_dir()]
+        checkpoints = [p for p in self.checkpoint_path.glob("*") if p.is_dir() and p.name.isdigit()]
         if not checkpoints:
             return None
         
         # Sort by step number
         checkpoints.sort(key=lambda x: int(x.name))
         return str(checkpoints[-1])
+    
+    def get_best_checkpoint(self) -> Optional[str]:
+        """Get the best checkpoint path."""
+        if not self.checkpoint_path or not self.checkpoint_path.exists():
+            return None
+        
+        best_path = self.checkpoint_path / "best"
+        if best_path.exists():
+            return str(best_path)
+        return None

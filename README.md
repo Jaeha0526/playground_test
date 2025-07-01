@@ -72,8 +72,12 @@ Training automatically saves **real-time progress** to organized directories:
 
 #### Checkpoints
 - **Directory**: `checkpoints/{env_name}_{timestamp}/` (matches reward graph timestamp)
-- **Files**: `{step_number}/` directories containing model parameters
-- **Frequency**: Every 10M steps by default
+- **Files**: 
+  - `{step_number}/` directories containing model parameters
+  - `best/` directory with the best-performing checkpoint
+  - `best_info.json` tracking best reward and step number
+- **Frequency**: Every evaluation interval (synced with reward graphs)
+- **Best tracking**: Automatically saves best-performing model
 - **Control**: Use `--checkpoint-off` to disable
 
 #### Example Directory Structure
@@ -85,13 +89,17 @@ reward_graphs/Go1JoystickFlatTerrain_20241230_143000/
 checkpoints/Go1JoystickFlatTerrain_20241230_143000/
 ├── 10000000/                        # Checkpoint at 10M steps
 ├── 20000000/                        # Checkpoint at 20M steps
-└── 30000000/                        # Checkpoint at 30M steps
+├── 30000000/                        # Checkpoint at 30M steps
+├── best/                            # Best-performing checkpoint
+└── best_info.json                   # Best model metadata
 ```
 
 #### Monitoring Your Training
 1. **View real-time progress**: Open `training_progress_current.png` in any image viewer
 2. **Analyze detailed data**: Check `training_progress.json` for comprehensive metrics
-3. **Resume training**: Use any checkpoint directory with `--restore-from`
+3. **Track best performance**: Check `best_info.json` for best reward achieved
+4. **Resume training**: Use any checkpoint directory with `--restore-from`
+5. **Use best model**: Load from `checkpoints/{env_name}_{timestamp}/best/` for evaluation
 
 ### Evaluate a Policy
 ```bash
@@ -215,10 +223,10 @@ python main.py train Go1JoystickFlatTerrain --config train_config.json
 
 Key training parameters can be configured:
 
-- **num_timesteps**: Total training steps (default: 100M)
-- **num_envs**: Parallel environments (default: 2048)
+- **num_timesteps**: Total training steps (default: 200M for Go1, proven from original notebook)
+- **num_envs**: Parallel environments (default: 8192)
 - **learning_rate**: PPO learning rate (default: 3e-4)
-- **batch_size**: Training batch size (default: 1024)
+- **batch_size**: Training batch size (default: 256)
 - **episode_length**: Max episode length (default: 1000)
 
 ## Evaluation Metrics
