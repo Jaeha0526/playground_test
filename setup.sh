@@ -70,41 +70,76 @@ check_gpu() {
 install_graphics_libs() {
     print_status "Checking graphics libraries for video generation..."
     
-    # Check if graphics libraries are already available
-    if ldconfig -p | grep -q "libegl\|libGL\|libOSMesa"; then
-        print_success "Graphics libraries already available"
-        return 0
-    fi
+    # Detect operating system
+    OS=$(uname -s)
     
-    # Check if we have sudo privileges
-    if sudo -n true 2>/dev/null; then
-        print_status "Installing OpenGL and Mesa libraries..."
+    if [ "$OS" = "Darwin" ]; then
+        # macOS
+        print_status "Detected macOS - using Homebrew for dependencies..."
         
-        # Update package list
-        sudo apt update -qq
+        # Check if Homebrew is installed
+        if ! command -v brew &> /dev/null; then
+            print_error "Homebrew not found. Please install Homebrew first:"
+            print_error "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            exit 1
+        fi
         
-        # Install graphics libraries and build tools
-        sudo apt install -y \
-            libegl1-mesa-dev \
-            libgl1-mesa-dev \
-            libosmesa6-dev \
-            xvfb \
-            ffmpeg \
-            build-essential \
-            git
+        print_status "Installing video generation dependencies with Homebrew..."
         
-        print_success "Graphics libraries installed"
+        # Install ffmpeg and other dependencies
+        brew install ffmpeg
+        
+        # macOS has built-in OpenGL support, so no additional graphics libraries needed
+        print_success "macOS video generation dependencies installed"
+        
+    elif [ "$OS" = "Linux" ]; then
+        # Linux
+        print_status "Detected Linux - using apt for dependencies..."
+        
+        # Check if graphics libraries are already available
+        if ldconfig -p | grep -q "libegl\|libGL\|libOSMesa"; then
+            print_success "Graphics libraries already available"
+            # Still check for ffmpeg
+            if command -v ffmpeg &> /dev/null; then
+                print_success "ffmpeg already available"
+                return 0
+            fi
+        fi
+        
+        # Check if we have sudo privileges
+        if sudo -n true 2>/dev/null; then
+            print_status "Installing OpenGL and Mesa libraries..."
+            
+            # Update package list
+            sudo apt update -qq
+            
+            # Install graphics libraries and build tools
+            sudo apt install -y \
+                libegl1-mesa-dev \
+                libgl1-mesa-dev \
+                libosmesa6-dev \
+                xvfb \
+                ffmpeg \
+                build-essential \
+                git
+            
+            print_success "Linux graphics libraries installed"
+        else
+            print_warning "No sudo privileges detected."
+            print_warning "Video generation requires graphics libraries."
+            print_warning ""
+            print_warning "To enable video generation, ask your system administrator to install:"
+            print_warning "  sudo apt install libegl1-mesa-dev libgl1-mesa-dev libosmesa6-dev xvfb ffmpeg build-essential git"
+            print_warning ""
+            print_warning "Alternative options:"
+            print_warning "  • Use a system with pre-installed graphics libraries (e.g., Google Colab)"
+            print_warning "  • Run evaluation without video: --no-video"
+            print_warning "  • Use Docker container with graphics libraries pre-installed"
+        fi
     else
-        print_warning "No sudo privileges detected."
-        print_warning "Video generation requires graphics libraries."
-        print_warning ""
-        print_warning "To enable video generation, ask your system administrator to install:"
-        print_warning "  sudo apt install libegl1-mesa-dev libgl1-mesa-dev libosmesa6-dev xvfb ffmpeg build-essential git"
-        print_warning ""
-        print_warning "Alternative options:"
-        print_warning "  • Use a system with pre-installed graphics libraries (e.g., Google Colab)"
-        print_warning "  • Run evaluation without video: --no-video"
-        print_warning "  • Use Docker container with graphics libraries pre-installed"
+        print_warning "Unsupported operating system: $OS"
+        print_warning "Video generation setup may require manual configuration."
+        print_warning "Supported systems: macOS (with Homebrew), Linux (with apt)"
     fi
 }
 
@@ -241,8 +276,12 @@ print_usage() {
     echo "     python main.py train Go1JoystickFlatTerrain"
     echo ""
     echo "  4. Evaluate with video generation:"
-    echo "     export MUJOCO_GL=osmesa"
-    echo "     python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain_*/best"
+    if [ "$OS" = "Darwin" ]; then
+        echo "     python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain_*/best"
+    else
+        echo "     export MUJOCO_GL=osmesa"
+        echo "     python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain_*/best"
+    fi
     echo ""
     echo "  5. For more options:"
     echo "     python main.py --help"
