@@ -103,17 +103,20 @@ checkpoints/Go1JoystickFlatTerrain_20241230_143000/
 
 ### Evaluate a Policy
 ```bash
+# Set environment for headless video generation (SSH/Docker environments)
+export MUJOCO_GL=osmesa
+
 # Basic evaluation with video
 python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
     --x-vel 1.0 --y-vel 0.0 --yaw-vel 0.0 --episodes 10
 
-# Evaluate with interactive video display (like notebook)
-python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
-    --x-vel 1.0 --show-video --camera track --width 1280 --height 720
-
 # Evaluate with custom camera and video settings
 python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/100000000 \
-    --camera side --width 1920 --height 1080 --save-video --show-video
+    --camera side --width 1920 --height 1080 --save-video
+
+# Evaluate best checkpoint from training
+python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain_20241230_143000/best \
+    --x-vel 1.5 --episodes 5 --camera track
 ```
 
 ### Train Handstand Policy
@@ -272,6 +275,64 @@ Evaluation automatically generates videos showing:
 --width 1920 --height 1080    # Full HD
 --width 1280 --height 720     # HD
 --width 640 --height 480      # Standard (default)
+```
+
+### Headless Video Generation
+
+For SSH/headless environments (like cloud servers or Docker), video generation requires specific setup:
+
+#### Prerequisites
+Graphics libraries are automatically installed by `setup.sh` if you have sudo access. 
+
+**With sudo access:**
+```bash
+sudo apt update
+sudo apt install -y libegl1-mesa-dev libgl1-mesa-dev libosmesa6-dev xvfb ffmpeg
+```
+
+**Without sudo access:**
+- Use Google Colab (has graphics libraries pre-installed)
+- Use Docker containers with graphics libraries
+- Ask system administrator to install the libraries
+- Run evaluation without video: `--no-video`
+
+#### Check Video Generation Support
+```bash
+# Check if graphics libraries are available
+ldconfig -p | grep -E "libegl|libGL|libOSMesa"
+
+# If libraries are found, you can generate videos
+# If not, you'll need to install them or use alternatives
+```
+
+#### Usage in Headless Environment
+```bash
+# Set MuJoCo to use OSMesa backend for headless rendering
+export MUJOCO_GL=osmesa
+
+# Evaluate with video generation
+python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/best --episodes 5
+
+# The video will be saved to videos/ directory
+ls videos/
+
+# If video generation fails, run without video
+python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain/best --episodes 5 --no-video
+```
+
+#### Troubleshooting Video Generation
+1. **"No OpenGL context"**: Ensure graphics libraries are installed
+2. **"MUJOCO_GL not set"**: Export `MUJOCO_GL=osmesa`
+3. **Empty videos directory**: Check evaluation logs for errors
+4. **Video quality issues**: Adjust `--width` and `--height` parameters
+
+#### Environment Variables
+```bash
+# For headless systems (SSH, Docker, etc.)
+export MUJOCO_GL=osmesa
+
+# For systems with display (optional)
+export MUJOCO_GL=glfw  # or leave unset
 ```
 
 ### Command Sequence Videos

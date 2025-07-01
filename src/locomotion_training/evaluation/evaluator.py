@@ -9,11 +9,11 @@ import jax
 import jax.numpy as jp
 import numpy as np
 from datetime import datetime
-from brax.training.agents.ppo import networks as ppo_networks
+from brax.training.agents.ppo import networks as ppo_networks, train as ppo
 from flax.training import orbax_utils
 from orbax import checkpoint as ocp
 
-from mujoco_playground import registry
+from mujoco_playground import registry, wrapper
 from mujoco_playground.config import locomotion_params
 from ..config.config import EvalConfig
 from ..utils.plotting import (
@@ -196,6 +196,10 @@ class LocomotionEvaluator:
             'metrics': metrics,
             'config': self.config
         }
+        
+        # Create video if requested
+        if self.config.save_video:
+            self.create_video(evaluation_data)
         
         return evaluation_data
     
@@ -387,8 +391,8 @@ class LocomotionEvaluator:
     def load_checkpoint_for_evaluation(self, checkpoint_path: str) -> Tuple[Callable, Any]:
         """Load a checkpoint and recreate the inference function.
         
-        This method properly reconstructs the make_inference_fn and loads parameters
-        following the same pattern as the brax PPO training code.
+        Uses the same approach as test_evaluate.py - ppo.train() with num_timesteps=0
+        which properly handles parameter loading and network reconstruction.
         
         Args:
             checkpoint_path: Path to the checkpoint directory
@@ -401,26 +405,10 @@ class LocomotionEvaluator:
         # Set model ID for video naming when loading checkpoint directly
         self.current_model_id = self._extract_model_id(str(checkpoint_path))
         
-        # Load environment config if available
-        config_path = checkpoint_path / "config.json"
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                env_config_dict = json.load(f)
-            print(f"Loaded environment config from {config_path}")
-        else:
-            # Fall back to default config
-            env_config_dict = registry.get_default_config(self.config.env_name).to_dict()
-            print(f"Using default environment config (no config.json found)")
+        # Create environment for loading
+        env = registry.load(self.config.env_name)
         
-        # Load the checkpoint parameters first
-        orbax_checkpointer = ocp.PyTreeCheckpointer()
-        restored_checkpoint = orbax_checkpointer.restore(checkpoint_path)
-        
-        # Extract components from checkpoint - this matches the brax PPO training state structure
-        # The checkpoint contains: [running_statistics, policy_state, value_state]  
-        running_stats, policy_state, value_state = restored_checkpoint
-        
-        # Get PPO parameters for the environment to recreate the exact same network factory
+        # Get PPO parameters for the environment 
         ppo_params = locomotion_params.brax_ppo_config(self.config.env_name)
         
         # Setup network factory exactly as in training
@@ -431,50 +419,24 @@ class LocomotionEvaluator:
                 **ppo_params.network_factory
             )
         
-        # Create environment for getting observation/action specs
-        env = registry.load(self.config.env_name)
+        # Use ppo.train with num_timesteps=0 to load checkpoint (same as test_evaluate.py)
+        train_params = dict(ppo_params)
+        train_params.update({
+            'num_timesteps': 0,  # Skip training, just load
+            'num_evals': 1,
+            'network_factory': network_factory,
+        })
         
-        # For now, skip normalization to test basic inference
-        # TODO: Fix normalization handling for structured observations
-        def dummy_preprocess(obs, rng=None):
-            """Identity preprocessing function for testing."""
-            return obs
-        
-        # Create networks with dummy preprocessing for now
-        networks = network_factory(
-            observation_size=env.observation_size,
-            action_size=env.action_size,
-            preprocess_observations_fn=dummy_preprocess
+        make_inference_fn, params, _ = ppo.train(
+            environment=env,
+            eval_env=env,
+            wrap_env_fn=wrapper.wrap_for_brax_training,
+            restore_checkpoint_path=checkpoint_path,
+            **train_params
         )
         
-        # Create the make_inference_fn following the brax PPO pattern exactly
-        def make_inference_fn(params, deterministic=False):
-            """Create inference function that returns action and extra info."""
-            
-            def inference_fn(obs, rng):
-                # The policy network already handles preprocessing via the network factory
-                # and expects the full policy state structure
-                logits = networks.policy_network.apply(params, obs, rng)
-                
-                # Create action distribution and sample/get mode
-                action_distribution = networks.parametric_action_distribution.apply({}, logits)
-                
-                if deterministic:
-                    # For deterministic inference, use mode of distribution
-                    action = action_distribution.mode()
-                else:
-                    # Sample from the distribution
-                    action = action_distribution.sample(seed=rng)
-                
-                # Return action and extra info (following brax pattern)
-                return action, {}
-            
-            return inference_fn
-        
         print(f"Successfully loaded checkpoint from {checkpoint_path}")
-        print(f"Policy parameters keys: {list(policy_state['params'].keys())}")
-        print(f"Running stats keys: {list(running_stats.keys())}")
-        return make_inference_fn, policy_state
+        return make_inference_fn, params
     
     def evaluate_checkpoint(self, 
                           checkpoint_path: str,

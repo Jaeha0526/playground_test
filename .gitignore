@@ -25,4 +25,5 @@ __pycache__/
 Thumbs.db
 
 # Videos (optional - comment out if you want to track videos)
-videos/
+/videos/
+

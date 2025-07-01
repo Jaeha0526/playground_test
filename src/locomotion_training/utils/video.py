@@ -71,15 +71,23 @@ def render_trajectory(env: Any,
         modify_scene_fns=mod_fns,
     )
     
+    # Ensure frames is a numpy array
+    if isinstance(frames, list):
+        frames = np.array(frames)
+    
     return frames
 
 
-def save_video(frames: np.ndarray,
+def save_video(frames,
               filepath: str,
               fps: float = 30.0,
               loop: bool = False):
     """Save video frames to file."""
     Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Convert to numpy array if it's a list
+    if isinstance(frames, list):
+        frames = np.array(frames)
     
     # Convert to proper format if needed
     if frames.dtype != np.uint8:

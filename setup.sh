@@ -66,6 +66,48 @@ check_gpu() {
     fi
 }
 
+# Install graphics libraries for video generation
+install_graphics_libs() {
+    print_status "Checking graphics libraries for video generation..."
+    
+    # Check if graphics libraries are already available
+    if ldconfig -p | grep -q "libegl\|libGL\|libOSMesa"; then
+        print_success "Graphics libraries already available"
+        return 0
+    fi
+    
+    # Check if we have sudo privileges
+    if sudo -n true 2>/dev/null; then
+        print_status "Installing OpenGL and Mesa libraries..."
+        
+        # Update package list
+        sudo apt update -qq
+        
+        # Install graphics libraries and build tools
+        sudo apt install -y \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libosmesa6-dev \
+            xvfb \
+            ffmpeg \
+            build-essential \
+            git
+        
+        print_success "Graphics libraries installed"
+    else
+        print_warning "No sudo privileges detected."
+        print_warning "Video generation requires graphics libraries."
+        print_warning ""
+        print_warning "To enable video generation, ask your system administrator to install:"
+        print_warning "  sudo apt install libegl1-mesa-dev libgl1-mesa-dev libosmesa6-dev xvfb ffmpeg build-essential git"
+        print_warning ""
+        print_warning "Alternative options:"
+        print_warning "  • Use a system with pre-installed graphics libraries (e.g., Google Colab)"
+        print_warning "  • Run evaluation without video: --no-video"
+        print_warning "  • Use Docker container with graphics libraries pre-installed"
+    fi
+}
+
 # Create virtual environment
 create_venv() {
     print_status "Setting up virtual environment..."
@@ -153,6 +195,15 @@ from mujoco_playground import registry
 print('✓ All core packages imported successfully')
 print(f'✓ JAX version: {jax.__version__}')
 print(f'✓ JAX devices: {jax.devices()}')
+
+# Test video generation setup
+import os
+os.environ['MUJOCO_GL'] = 'osmesa'
+try:
+    model = mujoco.MjModel.from_xml_string('<mujoco><worldbody><body><geom size=\"0.1\"/></body></worldbody></mujoco>')
+    print('✓ Video generation (OSMesa) working')
+except Exception as e:
+    print(f'⚠ Video generation may not work: {e}')
 "
     
     if [ $? -eq 0 ]; then
@@ -189,7 +240,11 @@ print_usage() {
     echo "  3. Train a policy:"
     echo "     python main.py train Go1JoystickFlatTerrain"
     echo ""
-    echo "  4. For more options:"
+    echo "  4. Evaluate with video generation:"
+    echo "     export MUJOCO_GL=osmesa"
+    echo "     python main.py evaluate Go1JoystickFlatTerrain checkpoints/Go1JoystickFlatTerrain_*/best"
+    echo ""
+    echo "  5. For more options:"
     echo "     python main.py --help"
     echo ""
     
@@ -208,6 +263,7 @@ main() {
     
     check_python
     check_gpu
+    install_graphics_libs
     create_venv
     activate_venv
     upgrade_pip
