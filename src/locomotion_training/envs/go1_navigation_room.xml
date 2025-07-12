@@ -1,0 +1,49 @@
+<mujoco model="go1_navigation_room">
+  <!-- Include the Go1 robot model with absolute path -->
+  <!-- Note: In actual use, this path would need to be dynamically generated -->
+  <include file="/workspace/playground_test/venv/lib/python3.10/site-packages/mujoco_playground/_src/locomotion/go1/xmls/go1_mjx_feetonly.xml"/>
+  
+  <!-- Add visual assets -->
+  <asset>
+    <!-- Ground texture (expected by Go1 model) -->
+    <texture type="skybox" builtin="gradient" rgb1="0.527 0.582 0.906" rgb2="0.1 0.1 0.35" width="800" height="800"/>
+    <texture name="groundplane" type="2d" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.15 0.2" width="100" height="100"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.0"/>
+    
+    <!-- Wall and goal materials (using colors directly) -->
+    <material name="wall_material" rgba="0.7 0.7 0.7 1"/>
+    <material name="goal_material" rgba="0 1 0 1" emission="0.5"/>
+  </asset>
+  
+  <worldbody>
+    <!-- Floor (from original scene) -->
+    <geom name="floor" size="0 0 0.01" type="plane" material="groundplane" contype="1" conaffinity="0" priority="1" friction="0.6" condim="3"/>
+    
+    <!-- Room walls (10m x 10m room) -->
+    <!-- North wall -->
+    <body name="wall_north" pos="0 5 0.25">
+      <geom name="wall_north_geom" type="box" size="5.1 0.1 0.5" material="wall_material" contype="1" conaffinity="1"/>
+    </body>
+    
+    <!-- South wall -->
+    <body name="wall_south" pos="0 -5 0.25">
+      <geom name="wall_south_geom" type="box" size="5.1 0.1 0.5" material="wall_material" contype="1" conaffinity="1"/>
+    </body>
+    
+    <!-- East wall -->
+    <body name="wall_east" pos="5 0 0.25">
+      <geom name="wall_east_geom" type="box" size="0.1 5.1 0.5" material="wall_material" contype="1" conaffinity="1"/>
+    </body>
+    
+    <!-- West wall -->
+    <body name="wall_west" pos="-5 0 0.25">
+      <geom name="wall_west_geom" type="box" size="0.1 5.1 0.5" material="wall_material" contype="1" conaffinity="1"/>
+    </body>
+    
+    <!-- Goal marker (will be repositioned randomly) -->
+    <body name="goal_marker" pos="2 2 0.05">
+      <geom name="goal_geom" type="cylinder" size="0.3 0.05" material="goal_material" contype="0" conaffinity="0"/>
+      <site name="goal_site" pos="0 0 0.1" size="0.02" rgba="0 1 0 1"/>
+    </body>
+  </worldbody>
+</mujoco>

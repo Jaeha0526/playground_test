@@ -400,5 +400,87 @@ def create_config(
     console.print(f"[bold green]Config saved to {output_file}[/bold green]")
 
 
+@app.command()
+def test_custom_env(
+    timesteps: int = typer.Option(100_000, "--timesteps", "-t", help="Number of training timesteps"),
+    seed: int = typer.Option(1, "--seed", help="Random seed"),
+):
+    """Test custom environment registration and training.
+    
+    This command demonstrates:
+    1. Creating a custom environment outside the library
+    2. Registering it with MuJoCo Playground
+    3. Training it exactly like built-in environments
+    """
+    console.print("[bold blue]Testing Custom Environment Registration[/bold blue]")
+    
+    # Import and register the custom environment
+    from mujoco_playground import locomotion
+    from src.locomotion_training.envs import Go1CustomIdentical, custom_identical_config
+    
+    # Register the custom environment
+    console.print("1. Registering custom environment...")
+    locomotion.register_environment(
+        env_name="Go1CustomIdentical",
+        env_class=Go1CustomIdentical,
+        cfg_class=custom_identical_config
+    )
+    console.print("[green]✓[/green] Environment registered: Go1CustomIdentical")
+    
+    # Verify it's in the registry
+    console.print("\n2. Verifying registration...")
+    all_envs = registry.locomotion.ALL_ENVS
+    if "Go1CustomIdentical" in all_envs:
+        console.print("[green]✓[/green] Found in registry!")
+    else:
+        console.print("[red]✗[/red] Not found in registry!")
+        raise typer.Exit(1)
+    
+    # Test loading the environment
+    console.print("\n3. Loading custom environment...")
+    try:
+        env = registry.load("Go1CustomIdentical")
+        console.print(f"[green]✓[/green] Environment loaded successfully!")
+        console.print(f"   - Action size: {env.action_size}")
+        console.print(f"   - Observation size: {env.observation_size}")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to load: {e}")
+        raise typer.Exit(1)
+    
+    # Train the custom environment
+    console.print(f"\n4. Training custom environment for {timesteps:,} steps...")
+    
+    # Use the existing train command logic
+    config = get_default_training_config("Go1CustomIdentical")
+    config.num_timesteps = timesteps
+    config.seed = seed
+    config.checkpoint_logdir = None  # Disable checkpointing for test
+    
+    trainer = LocomotionTrainer(config)
+    
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            progress.add_task(description="Training custom environment...", total=None)
+            
+            make_inference_fn, params, metrics = trainer.train()
+        
+        console.print("\n[bold green]Success! Custom environment trained successfully![/bold green]")
+        console.print(f"Final reward: {metrics.get('eval/episode_reward', 'N/A')}")
+        
+        # Compare with original
+        console.print("\n[bold yellow]Comparison:[/bold yellow]")
+        console.print("The custom environment (Go1CustomIdentical) should perform")
+        console.print("identically to the original Go1JoystickFlatTerrain since")
+        console.print("it inherits all behavior without modifications.")
+        
+    except Exception as e:
+        console.print(f"[bold red]Training failed: {e}[/bold red]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

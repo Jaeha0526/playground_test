@@ -38,7 +38,14 @@ class LocomotionTrainer:
         # Setup environment and training parameters
         self.env = registry.load(config.env_name)
         self.env_cfg = registry.get_default_config(config.env_name)
-        self.ppo_params = locomotion_params.brax_ppo_config(config.env_name)
+        
+        # Try to get PPO params, fall back to Go1 params for custom environments
+        try:
+            self.ppo_params = locomotion_params.brax_ppo_config(config.env_name)
+        except ValueError:
+            # For custom environments, use Go1 params as template
+            self.ppo_params = locomotion_params.brax_ppo_config('Go1JoystickFlatTerrain')
+            print(f"Using Go1JoystickFlatTerrain PPO params for custom env: {config.env_name}")
         
         # Override PPO params with config values
         self._update_ppo_params()

@@ -1,0 +1,16 @@
+{
+  "steps": [
+    0,
+    100000
+  ],
+  "rewards": [
+    117.18,
+    1682.65
+  ],
+  "initial_reward": 117.18,
+  "final_reward": 1682.65,
+  "improvement": 1565.47,
+  "training_time": "2 minutes 30 seconds",
+  "num_envs": 256,
+  "total_steps": 100000
+}

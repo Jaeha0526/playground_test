@@ -1,0 +1,26 @@
+{
+  "config": {
+    "num_timesteps": 300000,
+    "num_envs": 512,
+    "learning_rate": 0.0005
+  },
+  "training_data": {
+    "steps": [
+      0
+    ],
+    "rewards": [
+      1142.073974609375
+    ],
+    "success_rates": [
+      100.0
+    ],
+    "goal_reached_rewards": [
+      57109.375
+    ]
+  },
+  "current_step": 0,
+  "current_success_rate": 100.0,
+  "best_success_rate": 100.0,
+  "elapsed_time": "0:01:18.192729",
+  "note": "Success rate is estimated from goal_reached rewards as binary success"
+}

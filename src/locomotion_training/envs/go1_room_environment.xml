@@ -1,0 +1,58 @@
+<mujoco model="go1 navigation room">
+  <!-- Include the base Go1 model -->
+  <include file="../../../venv/lib/python3.10/site-packages/mujoco_playground/_src/locomotion/go1/xmls/go1_mjx_feetonly.xml"/>
+  
+  <!-- Assets and materials -->
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+    <material name="groundplane" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
+    <material name="wall" rgba="0.8 0.8 0.8 1.0"/>
+    <material name="goal" rgba="0.0 1.0 0.0 0.7"/>
+  </asset>
+  
+  <!-- Main world -->
+  <worldbody>
+    <!-- Floor (10m x 10m room) -->
+    <geom name="floor" size="5 5 0.01" type="plane" material="groundplane" 
+          contype="1" conaffinity="0" priority="1" friction="0.6" condim="3"/>
+    
+    <!-- Walls (creating 10m x 10m room) -->
+    <body name="wall_north" pos="0 5 0.25">
+      <geom name="wall_north_geom" type="box" size="5.1 0.1 0.25" material="wall"
+            contype="1" conaffinity="1" friction="0.8"/>
+    </body>
+    
+    <body name="wall_south" pos="0 -5 0.25">
+      <geom name="wall_south_geom" type="box" size="5.1 0.1 0.25" material="wall"
+            contype="1" conaffinity="1" friction="0.8"/>
+    </body>
+    
+    <body name="wall_east" pos="5 0 0.25">
+      <geom name="wall_east_geom" type="box" size="0.1 5.1 0.25" material="wall"
+            contype="1" conaffinity="1" friction="0.8"/>
+    </body>
+    
+    <body name="wall_west" pos="-5 0 0.25">
+      <geom name="wall_west_geom" type="box" size="0.1 5.1 0.25" material="wall"
+            contype="1" conaffinity="1" friction="0.8"/>
+    </body>
+    
+    <!-- Goal marker (visual indicator, will be moved programmatically) -->
+    <body name="goal_marker" pos="3 3 0.05">
+      <geom name="goal_geom" type="cylinder" size="0.3 0.05" material="goal"
+            contype="0" conaffinity="0"/>
+    </body>
+    
+    <!-- Lighting -->
+    <light name="room_light" pos="0 0 3" dir="0 0 -1" diffuse="1 1 1" specular="0.3 0.3 0.3"/>
+    
+    <!-- Camera definitions -->
+    <camera name="room_overview" pos="0 0 8" xyaxes="1 0 0 0 1 0" fovy="60"/>
+    <camera name="robot_follow" pos="-2 -2 2" xyaxes="1 0 0 0 0.7 0.7" mode="trackcom"/>
+  </worldbody>
+  
+  <!-- Cameras for visualization -->
+  <visual>
+    <headlight ambient="0.6 0.6 0.6" diffuse="0.6 0.6 0.6" specular="0.2 0.2 0.2"/>
+  </visual>
+</mujoco>
